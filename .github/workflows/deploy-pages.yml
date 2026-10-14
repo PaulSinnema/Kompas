@@ -1,0 +1,72 @@
+﻿name: Deploy naar GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish Kompas/Kompas.csproj -c Release -o publish
+
+      # Project pages live under /<repo>/, adjust base paths
+      - name: Base path aanpassen
+        working-directory: publish/wwwroot
+        run: |
+          BASE="/${{ github.event.repository.name }}/"
+          sed -i "s|<base href=\"/\" />|<base href=\"$BASE\" />|" index.html
+          sed -i "s|const base = \"/\";|const base = \"$BASE\";|" service-worker.js
+
+      # index.html changed, so refresh its hash for the service worker integrity check
+      - name: Service worker hash bijwerken
+        working-directory: publish/wwwroot
+        run: |
+          node -e '
+            const fs = require("fs");
+            const crypto = require("crypto");
+            const hash = "sha256-" + crypto.createHash("sha256").update(fs.readFileSync("index.html")).digest("base64");
+            const file = "service-worker-assets.js";
+            const src = fs.readFileSync(file, "utf8");
+            const out = src.replace(/"hash":\s*"sha256-[A-Za-z0-9+\/=]+",(\s*)"url":\s*"index\.html"/, `"hash": "${hash}",$1"url": "index.html"`);
+            if (out === src) { console.error("index.html hash niet gevonden"); process.exit(1); }
+            fs.writeFileSync(file, out);
+          '
+
+      # SPA fallback and disable Jekyll (needed for _framework)
+      - name: Pages-bestanden
+        working-directory: publish/wwwroot
+        run: |
+          cp index.html 404.html
+          touch .nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
