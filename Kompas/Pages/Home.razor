@@ -1,0 +1,163 @@
+﻿@page "/"
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<PageTitle>Kompas</PageTitle>
+
+<main class="kompas">
+    <h1>Kompas</h1>
+
+    <div class="dial">
+        <svg viewBox="-150 -150 300 300" role="img" aria-label="Kompasroos">
+            @* Fixed heading marker *@
+            <polygon class="lubber" points="0,-146 -8,-132 8,-132" />
+
+            <g class="rose" style="transform: rotate(@Css(-_rotation)deg)">
+                <circle r="130" class="ring" />
+                @for (var a = 0; a < 360; a += 5)
+                {
+                    var major = a % 30 == 0;
+                    <line x1="0" y1="-130" x2="0" y2="@(major ? -114 : -123)"
+                          class="@(major ? "tick major" : "tick")" transform="rotate(@a)" />
+                }
+                @* SVG <text> wrapped in <g>: Razor treats a bare <text> in code as a directive *@
+                @foreach (var (angle, label) in Cardinals)
+                {
+                    <g transform="rotate(@angle)">
+                        <text x="0" y="-90" class="@(angle == 0 ? "cardinal north" : "cardinal")">@label</text>
+                    </g>
+                }
+                @foreach (var (angle, label) in Intercardinals)
+                {
+                    <g transform="rotate(@angle)">
+                        <text x="0" y="-94" class="intercardinal">@label</text>
+                    </g>
+                }
+                @for (var a = 30; a < 360; a += 30)
+                {
+                    if (a % 90 == 0) continue;
+                    <g transform="rotate(@a)">
+                        <text x="0" y="-102" class="degree">@a</text>
+                    </g>
+                }
+
+                @* Needle: red points north *@
+                <polygon class="needle-n" points="0,-70 9,0 -9,0" />
+                <polygon class="needle-s" points="0,70 9,0 -9,0" />
+                <circle r="6" class="hub" />
+            </g>
+        </svg>
+    </div>
+
+    <div class="readout">
+        <span class="deg">@Rounded°</span>
+        <span class="dir">@Direction</span>
+    </div>
+
+    <div class="controls">
+        @if (!_sensorActive)
+        {
+            <button class="btn" @onclick="StartSensorAsync">Start kompas</button>
+        }
+        else
+        {
+            <button class="btn secondary" @onclick="StopSensorAsync">Stop sensor</button>
+        }
+        <p class="status">@_status</p>
+
+        <label class="manual">
+            Handmatig
+            <input type="range" min="0" max="359" step="1" value="@Rounded" @oninput="OnSliderInput" />
+        </label>
+    </div>
+</main>
+
+@code {
+    private static readonly (int Angle, string Label)[] Cardinals =
+        [(0, "N"), (90, "O"), (180, "Z"), (270, "W")];
+
+    private static readonly (int Angle, string Label)[] Intercardinals =
+        [(45, "NO"), (135, "ZO"), (225, "ZW"), (315, "NW")];
+
+    private static readonly string[] Points16 =
+        ["N", "NNO", "NO", "ONO", "O", "OZO", "ZO", "ZZO", "Z", "ZZW", "ZW", "WZW", "W", "WNW", "NW", "NNW"];
+
+    private DotNetObjectReference<Home>? _dotNetRef;
+    private double _heading;
+    private double _rotation; // continuous angle, avoids 359->0 spin
+    private bool _sensorActive;
+    private string _status = "Druk op Start om de kompassensor te gebruiken.";
+
+    private int Rounded => (int)Math.Round(_heading) % 360;
+
+    private string Direction => Points16[(int)Math.Round(_heading / 22.5) % 16];
+
+    private static string Css(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private async Task StartSensorAsync()
+    {
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        var result = await JS.InvokeAsync<string>("kompas.start", _dotNetRef);
+        _sensorActive = result == "ok";
+        _status = result switch
+        {
+            "ok" => "Wachten op sensor...",
+            "denied" => "Toegang tot de sensor geweigerd.",
+            "insecure" => "Sensor vereist HTTPS.",
+            _ => "Geen kompassensor beschikbaar. Gebruik de schuif."
+        };
+    }
+
+    private async Task StopSensorAsync()
+    {
+        await JS.InvokeVoidAsync("kompas.stop");
+        _sensorActive = false;
+        _status = "Sensor gestopt.";
+    }
+
+    [JSInvokable]
+    public void OnHeading(double heading)
+    {
+        if (!_sensorActive) return;
+        SetHeading(heading);
+        _status = "Sensor actief.";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnNoSensor()
+    {
+        _sensorActive = false;
+        _status = "Geen sensordata ontvangen. Gebruik de schuif.";
+        StateHasChanged();
+    }
+
+    private async Task OnSliderInput(ChangeEventArgs e)
+    {
+        if (_sensorActive) await StopSensorAsync();
+        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            SetHeading(value);
+    }
+
+    private void SetHeading(double heading)
+    {
+        heading = ((heading % 360) + 360) % 360;
+        var delta = heading - _heading;
+        if (delta > 180) delta -= 360;
+        else if (delta < -180) delta += 360;
+        _rotation += delta;
+        _heading = heading;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("kompas.stop");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        _dotNetRef?.Dispose();
+    }
+}

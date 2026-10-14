@@ -1,0 +1,19 @@
+﻿{
+  "name": "Kompas",
+  "short_name": "Kompas",
+  "id": "./",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11161d",
+  "theme_color": "#11161d",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}
