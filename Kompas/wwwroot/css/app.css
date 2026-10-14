@@ -87,39 +87,7 @@ h1 {
 .readout .deg { font-size: 3rem; font-weight: 700; }
 .readout .dir { font-size: 1.5rem; color: var(--muted); min-width: 3ch; }
 
-.controls {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    width: min(90vw, 420px);
-}
-
-.btn {
-    border: 0;
-    border-radius: 999px;
-    padding: 0.75rem 1.75rem;
-    font-size: 1rem;
-    font-weight: 600;
-    background: var(--accent);
-    color: #fff;
-    cursor: pointer;
-}
-
-.btn.secondary { background: var(--panel); color: var(--fg); }
-
-.status { margin: 0; font-size: 0.9rem; color: var(--muted); text-align: center; }
-
-.manual {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    font-size: 0.9rem;
-    color: var(--muted);
-}
-
-.manual input { flex: 1; accent-color: var(--accent); }
+.status { margin: 0; min-height: 1.2em; font-size: 0.9rem; color: var(--muted); text-align: center; }
 
 #blazor-error-ui {
     display: none;

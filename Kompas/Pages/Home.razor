@@ -54,22 +54,7 @@
         <span class="dir">@Direction</span>
     </div>
 
-    <div class="controls">
-        @if (!_sensorActive)
-        {
-            <button class="btn" @onclick="StartSensorAsync">Start kompas</button>
-        }
-        else
-        {
-            <button class="btn secondary" @onclick="StopSensorAsync">Stop sensor</button>
-        }
-        <p class="status">@_status</p>
-
-        <label class="manual">
-            Handmatig
-            <input type="range" min="0" max="359" step="1" value="@Rounded" @oninput="OnSliderInput" />
-        </label>
-    </div>
+    <p class="status">@_status</p>
 </main>
 
 @code {
@@ -85,8 +70,7 @@
     private DotNetObjectReference<Home>? _dotNetRef;
     private double _heading;
     private double _rotation; // continuous angle, avoids 359->0 spin
-    private bool _sensorActive;
-    private string _status = "Druk op Start om de kompassensor te gebruiken.";
+    private string _status = "Kompas starten...";
 
     private int Rounded => (int)Math.Round(_heading) % 360;
 
@@ -94,49 +78,40 @@
 
     private static string Css(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
-    private async Task StartSensorAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _dotNetRef ??= DotNetObjectReference.Create(this);
+        if (!firstRender) return;
+
+        _dotNetRef = DotNetObjectReference.Create(this);
         var result = await JS.InvokeAsync<string>("kompas.start", _dotNetRef);
-        _sensorActive = result == "ok";
         _status = result switch
         {
             "ok" => "Wachten op sensor...",
-            "denied" => "Toegang tot de sensor geweigerd.",
+            "needs-tap" => "Tik op het scherm om het kompas te starten.",
             "insecure" => "Sensor vereist HTTPS.",
-            _ => "Geen kompassensor beschikbaar. Gebruik de schuif."
+            _ => "Geen kompassensor beschikbaar."
         };
-    }
-
-    private async Task StopSensorAsync()
-    {
-        await JS.InvokeVoidAsync("kompas.stop");
-        _sensorActive = false;
-        _status = "Sensor gestopt.";
+        StateHasChanged();
     }
 
     [JSInvokable]
     public void OnHeading(double heading)
     {
-        if (!_sensorActive) return;
         SetHeading(heading);
-        _status = "Sensor actief.";
+        _status = "";
         StateHasChanged();
     }
 
     [JSInvokable]
-    public void OnNoSensor()
+    public void OnStatus(string status)
     {
-        _sensorActive = false;
-        _status = "Geen sensordata ontvangen. Gebruik de schuif.";
+        _status = status switch
+        {
+            "waiting" => "Wachten op sensor...",
+            "denied" => "Toegang tot de sensor geweigerd.",
+            _ => "Geen kompassensor beschikbaar."
+        };
         StateHasChanged();
-    }
-
-    private async Task OnSliderInput(ChangeEventArgs e)
-    {
-        if (_sensorActive) await StopSensorAsync();
-        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
-            SetHeading(value);
     }
 
     private void SetHeading(double heading)

@@ -3,6 +3,7 @@ window.kompas = {
     dotNet: null,
     handler: null,
     eventName: null,
+    tapHandler: null,
     lastSent: 0,
     timeout: null,
 
@@ -13,16 +14,30 @@ window.kompas = {
         if (!window.isSecureContext) return 'insecure';
         if (typeof DeviceOrientationEvent === 'undefined') return 'unsupported';
 
-        // iOS requires explicit permission
+        // iOS: permission only via user gesture, so wait for first tap
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
-                const result = await DeviceOrientationEvent.requestPermission();
-                if (result !== 'granted') return 'denied';
-            } catch {
-                return 'denied';
-            }
+            this.tapHandler = async () => {
+                document.removeEventListener('click', this.tapHandler);
+                this.tapHandler = null;
+                try {
+                    const result = await DeviceOrientationEvent.requestPermission();
+                    if (result !== 'granted') { this.notify('denied'); return; }
+                } catch {
+                    this.notify('denied');
+                    return;
+                }
+                this.listen();
+                this.notify('waiting');
+            };
+            document.addEventListener('click', this.tapHandler);
+            return 'needs-tap';
         }
 
+        this.listen();
+        return 'ok';
+    },
+
+    listen() {
         this.eventName = ('ondeviceorientationabsolute' in window) ? 'deviceorientationabsolute' : 'deviceorientation';
 
         this.handler = e => {
@@ -53,19 +68,25 @@ window.kompas = {
         // No data within 3 seconds -> no usable sensor
         this.timeout = setTimeout(() => {
             this.stop();
-            if (dotNetRef) dotNetRef.invokeMethodAsync('OnNoSensor');
+            this.notify('nosensor');
         }, 3000);
+    },
 
-        return 'ok';
+    notify(status) {
+        if (this.dotNet) this.dotNet.invokeMethodAsync('OnStatus', status);
     },
 
     stop() {
         if (this.handler && this.eventName) {
             window.removeEventListener(this.eventName, this.handler, true);
         }
+        if (this.tapHandler) {
+            document.removeEventListener('click', this.tapHandler);
+        }
         clearTimeout(this.timeout);
         this.timeout = null;
         this.handler = null;
         this.eventName = null;
+        this.tapHandler = null;
     }
 };
