@@ -14,8 +14,15 @@ window.kompas = {
         if (!window.isSecureContext) return 'insecure';
         if (typeof DeviceOrientationEvent === 'undefined') return 'unsupported';
 
-        // iOS: permission only via user gesture, so wait for first tap
         if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            // Chrome grants without gesture; iOS needs a tap
+            try {
+                if (await DeviceOrientationEvent.requestPermission() === 'granted') {
+                    this.listen();
+                    return 'ok';
+                }
+            } catch { }
+
             this.tapHandler = async () => {
                 document.removeEventListener('click', this.tapHandler);
                 this.tapHandler = null;
