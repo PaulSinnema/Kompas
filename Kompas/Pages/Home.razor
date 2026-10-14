@@ -56,6 +56,42 @@
     </div>
 
     <p class="status">@_status</p>
+
+    <section class="panels">
+        <div class="panel level-panel">
+            <h2>Waterpas</h2>
+            <svg viewBox="-50 -50 100 100" class="level">
+                <circle r="46" class="level-ring" />
+                <circle r="10" class="level-target" />
+                <line x1="-46" y1="0" x2="46" y2="0" class="level-cross" />
+                <line x1="0" y1="-46" x2="0" y2="46" class="level-cross" />
+                <circle r="8" cx="@Css(_bubbleX)" cy="@Css(_bubbleY)" class="@(IsLevel ? "bubble flat" : "bubble")" />
+            </svg>
+            <dl>
+                <dt>Voor/achter</dt><dd>@_beta.ToString("F0")°</dd>
+                <dt>Links/rechts</dt><dd>@_gamma.ToString("F0")°</dd>
+            </dl>
+        </div>
+
+        <div class="panel">
+            <h2>Locatie</h2>
+            @if (_position is { } p)
+            {
+                <dl>
+                    <dt>Breedte</dt><dd>@p.Latitude.ToString("F5")°</dd>
+                    <dt>Lengte</dt><dd>@p.Longitude.ToString("F5")°</dd>
+                    <dt>Nauwkeurigheid</dt><dd>±@p.Accuracy.ToString("F0") m</dd>
+                    <dt>Hoogte</dt><dd>@(p.Altitude is { } alt ? $"{alt:F0} m" : "–")</dd>
+                    <dt>Snelheid</dt><dd>@(p.Speed is { } spd ? $"{spd * 3.6:F1} km/u" : "–")</dd>
+                    <dt>Koers</dt><dd>@(p.Course is { } crs && p.Speed > 0.5 ? $"{crs:F0}°" : "–")</dd>
+                </dl>
+            }
+            else
+            {
+                <p class="status">@_geoStatus</p>
+            }
+        </div>
+    </section>
 </main>
 
 @code {
@@ -77,6 +113,18 @@
     private double _rotation; // continuous angle, avoids 359->0 spin
     private string _status = "Kompas starten...";
 
+    private const double BubbleRange = 36; // max bubble offset in level svg units
+    private double _beta;
+    private double _gamma;
+    private double _bubbleX;
+    private double _bubbleY;
+
+    private record GeoPosition(double Latitude, double Longitude, double Accuracy, double? Altitude, double? Speed, double? Course);
+    private GeoPosition? _position;
+    private string _geoStatus = "Locatie ophalen...";
+
+    private bool IsLevel => Math.Abs(_beta) < 2 && Math.Abs(_gamma) < 2;
+
     private int Rounded => (int)Math.Round(_heading) % 360;
 
     private string Direction => Points16[(int)Math.Round(_heading / 22.5) % 16];
@@ -88,6 +136,10 @@
         if (!firstRender) return;
 
         _dotNetRef = DotNetObjectReference.Create(this);
+
+        if (!await JS.InvokeAsync<bool>("kompas.startGeo", _dotNetRef))
+            _geoStatus = "Locatie niet beschikbaar.";
+
         var result = await JS.InvokeAsync<string>("kompas.start", _dotNetRef);
         _status = result switch
         {
@@ -100,11 +152,52 @@
     }
 
     [JSInvokable]
-    public void OnHeading(double heading)
+    public void OnOrientation(double heading, double beta, double gamma)
     {
         SetHeading(heading);
+        SetTilt(beta, gamma);
         _status = "";
         StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPosition(double latitude, double longitude, double accuracy, double? altitude, double? speed, double? course)
+    {
+        _position = new GeoPosition(latitude, longitude, accuracy, altitude, speed, course);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnGeoError(int code)
+    {
+        // Keep last known position on timeout
+        if (_position is not null && code == 3) return;
+        _position = null;
+        _geoStatus = code switch
+        {
+            1 => "Toegang tot locatie geweigerd.",
+            3 => "Geen GPS-signaal.",
+            _ => "Locatie niet beschikbaar."
+        };
+        StateHasChanged();
+    }
+
+    private void SetTilt(double beta, double gamma)
+    {
+        _beta = beta;
+        _gamma = gamma;
+
+        // Bubble moves to the high side; 45° tilt = edge
+        var x = -gamma / 45 * BubbleRange;
+        var y = -beta / 45 * BubbleRange;
+        var length = Math.Sqrt(x * x + y * y);
+        if (length > BubbleRange)
+        {
+            x = x / length * BubbleRange;
+            y = y / length * BubbleRange;
+        }
+        _bubbleX = x;
+        _bubbleY = y;
     }
 
     [JSInvokable]
@@ -134,6 +227,7 @@
         try
         {
             await JS.InvokeVoidAsync("kompas.stop");
+            await JS.InvokeVoidAsync("kompas.stopGeo");
         }
         catch (JSDisconnectedException)
         {

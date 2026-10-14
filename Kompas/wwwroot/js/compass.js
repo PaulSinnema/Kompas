@@ -67,7 +67,7 @@ window.kompas = {
             const now = performance.now();
             if (now - this.lastSent < 50) return;
             this.lastSent = now;
-            this.dotNet.invokeMethodAsync('OnHeading', heading);
+            this.dotNet.invokeMethodAsync('OnOrientation', heading, e.beta ?? 0, e.gamma ?? 0);
         };
 
         window.addEventListener(this.eventName, this.handler, true);
@@ -77,6 +77,26 @@ window.kompas = {
             this.stop();
             this.notify('nosensor');
         }, 3000);
+    },
+
+    geoWatchId: null,
+
+    // Start GPS position updates
+    startGeo(dotNetRef) {
+        this.stopGeo();
+        if (!('geolocation' in navigator)) return false;
+        this.geoWatchId = navigator.geolocation.watchPosition(
+            p => dotNetRef.invokeMethodAsync('OnPosition',
+                p.coords.latitude, p.coords.longitude, p.coords.accuracy,
+                p.coords.altitude, p.coords.speed, p.coords.heading),
+            err => dotNetRef.invokeMethodAsync('OnGeoError', err.code),
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+        return true;
+    },
+
+    stopGeo() {
+        if (this.geoWatchId !== null) navigator.geolocation.clearWatch(this.geoWatchId);
+        this.geoWatchId = null;
     },
 
     notify(status) {
