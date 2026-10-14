@@ -21,11 +21,16 @@ async function onInstall(event) {
     console.info('Service worker: Install');
 
     // Fetch and cache all matching items from the assets manifest
-    const assetsRequests = self.assetsManifest.assets
+    // Hash in query string bypasses stale CDN copies (GitHub Pages caches 10 min)
+    const assets = self.assetsManifest.assets
         .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
-        .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
-        .map(asset => new Request(asset.url, { integrity: asset.hash, cache: 'no-cache' }));
-    await caches.open(cacheName).then(cache => cache.addAll(assetsRequests));
+        .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)));
+    const cache = await caches.open(cacheName);
+    await Promise.all(assets.map(async asset => {
+        const response = await fetch(`${asset.url}?v=${encodeURIComponent(asset.hash)}`, { integrity: asset.hash, cache: 'no-store' });
+        if (!response.ok) throw new Error(`Fetch failed: ${asset.url}`);
+        await cache.put(asset.url, response);
+    }));
 }
 
 async function onActivate(event) {
