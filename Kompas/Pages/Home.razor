@@ -5,6 +5,7 @@
 <PageTitle>Kompas</PageTitle>
 
 <main class="kompas">
+    <span class="version">@AppVersion</span>
     <h1>Kompas</h1>
 
     <div class="dial">
@@ -66,6 +67,10 @@
 
     private static readonly string[] Points16 =
         ["N", "NNO", "NO", "ONO", "O", "OZO", "ZO", "ZZO", "Z", "ZZW", "ZW", "WZW", "W", "WNW", "NW", "NNW"];
+
+    // Version from <Version> in Kompas.csproj
+    private static readonly string AppVersion =
+        typeof(Home).Assembly.GetName().Version is { } v ? $"v{v.Major}.{v.Minor}.{v.Build}" : "";
 
     private DotNetObjectReference<Home>? _dotNetRef;
     private double _heading;

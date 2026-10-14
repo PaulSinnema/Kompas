@@ -87,6 +87,14 @@ h1 {
 .readout .deg { font-size: 3rem; font-weight: 700; }
 .readout .dir { font-size: 1.5rem; color: var(--muted); min-width: 3ch; }
 
+.version {
+    position: fixed;
+    top: 0.5rem;
+    right: 16px;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
 .status { margin: 0; min-height: 1.2em; font-size: 0.9rem; color: var(--muted); text-align: center; }
 
 #blazor-error-ui {
